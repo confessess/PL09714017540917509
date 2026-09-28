@@ -596,7 +596,7 @@ RegisterCleanup(function()
     PL.removeBulletHook()
 end)
 
-local SilentAimLeft = Tabs.Rage:AddLeftGroupbox("Ragebot")
+local SilentAimLeft = Tabs.Rage:AddLeftGroupbox("Ragebot (silent aim)")
 local SilentAimRight = Tabs.Rage:AddRightGroupbox("Filters & Visuals")
 
 local SilentAimState = {
@@ -692,7 +692,7 @@ local function saGetTarget(origin, rangeLimit, attackCheck)
     end
     return basePart
 end
-print("silent load")
+
 SilentAimLeft:AddToggle("SilentAimEnabled", {
     Text = "Enabled",
     Default = false,
