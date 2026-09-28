@@ -1,8 +1,7 @@
--- most of this shit is vibecoded so don't bother making a big deal that this script is leaked lol xoxoxo
--- do not sell this please
+
 local Airflow = loadstring(game:HttpGet("https://raw.githubusercontent.com/confessess/AIRFLOW0978109571095710975/main/source.lua"))()
 local Window = Airflow:CreateWindow({
-    Title = "Kinder.Club",
+    Title = "Light hub",
     Subtitle = "Prison Life",
     Keybind = Enum.KeyCode.RightShift,
     Loading = false,
@@ -16,7 +15,7 @@ local Library = {}
 
 function Library:Notify(message, duration)
     Window:Notify({
-        Title = "Kinder.Club",
+        Title = "Light hub",
         Content = tostring(message),
         Duration = duration or 4,
     })
@@ -181,10 +180,7 @@ for _, name in ipairs({ "Rage", "Legit", "Visuals", "World", "Misc" }) do
     Tabs[name] = tab
 end
 
-pcall(function()
-    local Event = game:GetService("ReplicatedStorage").Remotes.AnnouncementReceived
-    firesignal(Event.OnClientEvent, "Thanks for using kinder.club!")
-end)
+
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -6904,4 +6900,4 @@ SettingsTab:Button({
     end,
 })
 
-Library:Notify("Kinder.Club has Loaded!", 4)
+Library:Notify("Light hub has Loaded!", 4)
