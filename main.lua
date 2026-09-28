@@ -1,19 +1,185 @@
 -- most of this shit is vibecoded so don't bother making a big deal that this script is leaked lol xoxoxo
 -- do not sell this please
-local AirFlow = loadstring(game:HttpGet("https://raw.githubusercontent.com/confessess/AIRFLOW0978109571095710975/main/source.lua"))()
-
-local Window = AirFlow:CreateWindow({
+local Airflow = loadstring(game:HttpGet("https://raw.githubusercontent.com/confessess/AIRFLOW0978109571095710975/main/source.lua"))()
+local Window = Airflow:CreateWindow({
     Title = "Kinder.Club",
-    Description = "Prison Life"
+    Subtitle = "Prison Life",
+    Keybind = Enum.KeyCode.RightShift,
+    Loading = false,
 })
 
-local Tabs = {
-    Rage = Window:Tab({ Title = "Rage", Icon = "crosshair" }),
-    Legit = Window:Tab({ Title = "Legit", Icon = "target" }),
-    Visuals = Window:Tab({ Title = "Visuals", Icon = "eye" }),
-    World = Window:Tab({ Title = "World", Icon = "globe" }),
-    Misc = Window:Tab({ Title = "Misc", Icon = "wrench" }),
-}
+local Options = {}
+local Toggles = {}
+local AirflowConnections = {}
+local KeyInputService = game:GetService("UserInputService")
+local Library = {}
+
+function Library:Notify(message, duration)
+    Window:Notify({
+        Title = "Kinder.Club",
+        Content = tostring(message),
+        Duration = duration or 4,
+    })
+end
+
+function Library:Unload()
+    for _, connection in ipairs(AirflowConnections) do
+        connection:Disconnect()
+    end
+    Window:Destroy()
+end
+
+local function airflowOptions(id, options)
+    local adapted = table.clone(options or {})
+    adapted.Name = adapted.Name or adapted.Text or id
+    adapted.Desc = adapted.Desc or adapted.Description
+    return adapted
+end
+
+local function registerOption(id, control)
+    if control.Set and not control.SetValue then
+        control.SetValue = function(self, value, silent)
+            return self:Set(value, silent)
+        end
+    end
+    Options[id] = control
+    Toggles[id] = control
+    return control
+end
+
+local GroupMethods = {}
+local LabelMethods = {}
+
+local function createGroup(tab, name)
+    return setmetatable({ Tab = tab, Name = name, Section = nil }, { __index = GroupMethods })
+end
+
+local function ensureSection(group)
+    if not group.Section then
+        group.Section = group.Tab:Section(group.Name)
+    end
+    return group.Tab
+end
+
+function GroupMethods:AddToggle(id, options)
+    options = airflowOptions(id, options)
+    return registerOption(id, ensureSection(self):Toggle(options))
+end
+
+function GroupMethods:AddSlider(id, options)
+    options = airflowOptions(id, options)
+    if options.Step == nil then
+        options.Step = options.Increment or 10 ^ -(options.Rounding or 0)
+    end
+    return registerOption(id, ensureSection(self):Slider(options))
+end
+
+function GroupMethods:AddDropdown(id, options)
+    options = airflowOptions(id, options)
+    options.Options = options.Options or options.Values or {}
+    options.Multi = options.Multi == true
+    if type(options.Default) == "number" then
+        if options.Multi then
+            options.Default = {}
+        else
+            options.Default = options.Default > 0 and options.Options[options.Default] or nil
+        end
+    end
+    local callback = options.Callback
+    if options.Multi and callback then
+        options.Callback = function(values)
+            local selected = {}
+            for _, value in ipairs(values or {}) do
+                selected[value] = true
+            end
+            callback(selected)
+        end
+    end
+    local control = ensureSection(self):Dropdown(options)
+    control.SetValues = function(current, values)
+        return current:Refresh(values, true)
+    end
+    control.SetValue = function(current, value, silent)
+        return current:Set(value, silent)
+    end
+    return registerOption(id, control)
+end
+
+function GroupMethods:AddButton(name, callback)
+    return ensureSection(self):Button(airflowOptions(name, { Callback = callback }))
+end
+
+function GroupMethods:AddDivider()
+    return ensureSection(self):Divider()
+end
+
+function GroupMethods:AddLabel(text)
+    return setmetatable({ Group = self, Text = text }, { __index = LabelMethods })
+end
+
+function LabelMethods:AddKeyPicker(id, options)
+    options = airflowOptions(id, options)
+    options.Name = options.Text or self.Text or id
+    if type(options.Default) == "string" then
+        options.Default = Enum.KeyCode[options.Default]
+    end
+
+    local mode = options.Mode
+    local active = false
+    local keyCode = options.Default
+    local callback = options.Callback
+    options.Callback = function(key)
+        if mode == "Toggle" then
+            active = not active
+            if callback then callback(active) end
+        elseif mode == "Hold" then
+            active = true
+            if callback then callback(true) end
+        elseif callback then
+            callback(key)
+        end
+    end
+    local onChanged = options.OnChanged
+    options.OnChanged = function(key)
+        keyCode = key
+        if onChanged then onChanged(key) end
+    end
+
+    local control = ensureSection(self.Group):Keybind(options)
+    control.GetState = function()
+        return active
+    end
+    control.SetValue = function(current, key, silent)
+        current:Set(key, silent)
+        keyCode = key
+        return key
+    end
+    if mode == "Hold" then
+        table.insert(AirflowConnections, KeyInputService.InputEnded:Connect(function(input)
+            if input.KeyCode == keyCode and active then
+                active = false
+                if callback then callback(false) end
+            end
+        end))
+    end
+    return registerOption(id, control)
+end
+
+function LabelMethods:AddColorPicker(id, options)
+    options = airflowOptions(id, options)
+    options.Name = self.Text or options.Name or id
+    return registerOption(id, ensureSection(self.Group):ColorPicker(options))
+end
+
+local Tabs = {}
+for _, name in ipairs({ "Rage", "Legit", "Visuals", "World", "Misc" }) do
+    local tab = Window:Tab({ Name = name })
+    tab.AddLeftGroupbox = function(self, groupName)
+        return createGroup(self, groupName)
+    end
+    tab.AddRightGroupbox = tab.AddLeftGroupbox
+    Tabs[name] = tab
+end
 
 pcall(function()
     local Event = game:GetService("ReplicatedStorage").Remotes.AnnouncementReceived
@@ -434,8 +600,8 @@ RegisterCleanup(function()
     PL.removeBulletHook()
 end)
 
-local SilentAimLeft = Tabs.Rage:Section("Ragebot")
-local SilentAimRight = Tabs.Rage:Section("Filters & Visuals")
+local SilentAimLeft = Tabs.Rage:AddLeftGroupbox("Ragebot")
+local SilentAimRight = Tabs.Rage:AddRightGroupbox("Filters & Visuals")
 
 local SilentAimState = {
     Enabled = false,
@@ -531,8 +697,8 @@ local function saGetTarget(origin, rangeLimit, attackCheck)
     return basePart
 end
 print("silent load")
-SilentAimLeft:Toggle({{
-    Title = "Enabled",
+SilentAimLeft:AddToggle("SilentAimEnabled", {
+    Text = "Enabled",
     Default = false,
     Callback = function(v)
         SilentAimState.Enabled = v
@@ -592,71 +758,73 @@ SilentAimLeft:Toggle({{
             shootTimer = os.clock() + 0.3
         end, 1) 
     end
-}})
+})
 
-SilentAimLeft:Toggle({{
-    Title = "AutoFire",
+SilentAimLeft:AddToggle("SilentAimTriggerbot", {
+    Text = "AutoFire",
     Default = false,
     Callback = function(v) SilentAimState.Triggerbot = v end
-}})
+})
 
-SilentAimLeft:Toggle({{
-    Title = "Arrest Safety",
+SilentAimLeft:AddToggle("SilentAimArrestSafety", {
+    Text = "Arrest Safety",
     Default = false,
     Callback = function(v) SilentAimState.ArrestSafety = v end
-}})
+})
 
-SilentAimLeft:Toggle({{
-    Title = "MultiPoint",
+SilentAimLeft:AddToggle("SilentAimMultiPoint", {
+    Text = "MultiPoint",
     Default = false,
     Callback = function(v) SilentAimState.MultiPoint = v end
-}})
+})
 
-SilentAimLeft:Slider({{
-    Title = "FoV Size",
+SilentAimLeft:AddSlider("SilentAimRange", {
+    Text = "FoV Size",
     Default = 120,
     Min = 10,
     Max = 600,
+    Rounding = 0,
     Callback = function(v) SilentAimState.Range = v end
-}})
+})
 
-SilentAimLeft:Toggle({{
-    Title = "Show FoV Circle",
+SilentAimLeft:AddToggle("SilentAimShowFoV", {
+    Text = "Show FoV Circle",
     Default = true,
     Callback = function(v) SilentAimState.ShowFoV = v end
-}})
+})
 
-SilentAimLeft:Toggle({{
-    Title = "Circle Filled",
+SilentAimLeft:AddToggle("SilentAimFoVFilled", {
+    Text = "Circle Filled",
     Default = false,
     Callback = function(v) SilentAimState.FoVCircleFilled = v end
-}})
+})
 
-SilentAimLeft:Slider({{
-    Title = "Circle Transparency",
+SilentAimLeft:AddSlider("SilentAimFoVTransparency", {
+    Text = "Circle Transparency",
     Default = 0.4,
     Min = 0,
     Max = 1,
+    Rounding = 2,
     Callback = function(v) SilentAimState.FoVCircleTransparency = v end
-}})
+})
 
-SilentAimRight:Toggle({{
-    Title = "ForceField Check",
+SilentAimRight:AddToggle("SilentAimForceFieldCheck", {
+    Text = "ForceField Check",
     Default = true,
     Callback = function(v) SilentAimState.ForceFieldCheck = v end
-}})
+})
 
-SilentAimRight:Toggle({{
-    Title = "Death Check",
+SilentAimRight:AddToggle("SilentAimDeathCheck", {
+    Text = "Death Check",
     Default = true,
     Callback = function(v) SilentAimState.DeathCheck = v end
-}})
+})
 
-SilentAimRight:Toggle({{
-    Title = "Friend Check",
+SilentAimRight:AddToggle("SilentAimFriendCheck", {
+    Text = "Friend Check",
     Default = false,
     Callback = function(v) SilentAimState.FriendCheck = v end
-}})
+})
 
 SilentAimRight:AddDropdown("SilentAimTeams", {
     Values = {"Guards", "Inmates", "Criminals"},
@@ -949,7 +1117,7 @@ RegisterCleanup(function()
 end)
 
 do
-    local PeekGroup = Tabs.Rage:Section("Peek Assist")
+    local PeekGroup = Tabs.Rage:AddLeftGroupbox("Peek Assist")
 
     local PA = {
         Enabled = false,
@@ -1026,8 +1194,8 @@ do
         DestroyCircle()
     end)
 
-    PeekGroup:Toggle({{
-        Title = "Enabled",
+    PeekGroup:AddToggle("PeekAssistEnabled", {
+        Text = "Enabled",
         Default = false,
         Callback = function(Value)
             PA.Enabled = Value
@@ -1035,15 +1203,16 @@ do
                 ReturnPoint()
             end
         end
-    }})
+    })
 
-    PeekGroup:Label({ Text = "Peek Key" }):Keybind({{
+    PeekGroup:AddLabel("Peek Key"):AddKeyPicker("PeekAssistKey", {
         Default = "C",
         Mode = "Hold",
-        Title = "Peek Key"
-    }})
+        Text = "Peek Key",
+        NoUI = false
+    })
 
-    PeekGroup:Label({ Text = "Circle Color" }):ColorPicker({{
+    PeekGroup:AddLabel("Circle Color"):AddColorPicker("PeekAssistColor", {
         Default = Color3.fromRGB(0, 255, 200),
         Title = "Peek Circle Color",
         Callback = function(Value)
@@ -1052,7 +1221,7 @@ do
                 PA.Circle.Color = Value
             end
         end
-    }})
+    })
 
     TrackConnection(RunService.RenderStepped:Connect(function()
         if not PA.Enabled then
@@ -1076,8 +1245,8 @@ do
 end
 
 do
-    local AimbotLeft = Tabs.Legit:Section("Aimbot")
-    local AimbotRight = Tabs.Legit:Section("Aimbot Settings")
+    local AimbotLeft = Tabs.Legit:AddLeftGroupbox("Aimbot")
+    local AimbotRight = Tabs.Legit:AddRightGroupbox("Aimbot Settings")
 
     local AB = {
         Enabled = false,
@@ -1213,8 +1382,8 @@ do
         FOVCircle:Remove()
     end)
 
-    AimbotLeft:Toggle({{
-        Title = "Enabled",
+    AimbotLeft:AddToggle("LegitAimbotEnabled", {
+        Text = "Enabled",
         Default = false,
         Callback = function(Value)
             AB.Enabled = Value
@@ -1223,7 +1392,7 @@ do
                 AB.Holding = false
             end
         end
-    }})
+    })
 
     AimbotLeft:AddDropdown("LegitAimbotPart", {
         Values = {"Head", "Torso", "HumanoidRootPart"},
@@ -1235,19 +1404,20 @@ do
         end
     })
 
-    AimbotLeft:Toggle({{
-        Title = "Always On",
+    AimbotLeft:AddToggle("LegitAimbotAlways", {
+        Text = "Always On",
         Default = false,
         Callback = function(Value)
             AB.AlwaysOn = Value
         end
-    }})
+    })
 
-    AimbotLeft:Label({ Text = "Aim Key" }):Keybind({{
+    AimbotLeft:AddLabel("Aim Key"):AddKeyPicker("LegitAimbotKey", {
         Default = "E",
         Mode = "Hold",
-        Title = "Aim Key"
-    }})
+        Text = "Aim Key",
+        NoUI = false
+    })
 
     TrackConnection(RunService.RenderStepped:Connect(function()
         local keybind = Options.LegitAimbotKey
@@ -1256,101 +1426,106 @@ do
         end
     end))
 
-    AimbotRight:Slider({{
-        Title = "FOV",
+    AimbotRight:AddSlider("LegitAimbotFOV", {
+        Text = "FOV",
         Default = 120,
         Min = 20,
         Max = 400,
+        Rounding = 0,
         Callback = function(Value)
             AB.FOV = Value
         end
-    }})
+    })
 
-    AimbotRight:Slider({{
-        Title = "Smoothness",
+    AimbotRight:AddSlider("LegitAimbotSmooth", {
+        Text = "Smoothness",
         Default = 0.12,
         Min = 0.01,
         Max = 1,
+        Rounding = 2,
         Callback = function(Value)
             AB.Smoothness = Value
         end
-    }})
+    })
 
-    AimbotRight:Slider({{
-        Title = "Max Distance",
+    AimbotRight:AddSlider("LegitAimbotDist", {
+        Text = "Max Distance",
         Default = 400,
         Min = 50,
         Max = 1000,
+        Rounding = 0,
+        Suffix = " studs",
         Callback = function(Value)
             AB.MaxDistance = Value
         end
-    }})
+    })
 
-    AimbotRight:Toggle({{
-        Title = "Team Check",
+    AimbotRight:AddToggle("LegitAimbotTeam", {
+        Text = "Team Check",
         Default = true,
         Callback = function(Value)
             AB.TeamCheck = Value
         end
-    }})
+    })
 
-    AimbotRight:Toggle({{
-        Title = "Friend Check",
+    AimbotRight:AddToggle("LegitAimbotFriend", {
+        Text = "Friend Check",
         Default = false,
         Callback = function(Value)
             AB.FriendCheck = Value
         end
-    }})
+    })
 
-    AimbotRight:Toggle({{
-        Title = "Visible Check",
+    AimbotRight:AddToggle("LegitAimbotVisible", {
+        Text = "Visible Check",
         Default = true,
         Callback = function(Value)
             AB.VisibleCheck = Value
         end
-    }})
+    })
 
-    AimbotRight:Toggle({{
-        Title = "Sticky Aim",
+    AimbotRight:AddToggle("LegitAimbotSticky", {
+        Text = "Sticky Aim",
         Default = true,
         Callback = function(Value)
             AB.Sticky = Value
         end
-    }})
+    })
 
-    AimbotRight:Toggle({{
-        Title = "Show FOV",
+    AimbotRight:AddToggle("LegitAimbotShowFOV", {
+        Text = "Show FOV",
         Default = true,
         Callback = function(Value)
             AB.ShowFOV = Value
         end
-    }})
+    })
 
-    AimbotRight:Toggle({{
-        Title = "FOV Filled",
+    AimbotRight:AddToggle("LegitAimbotFOVFilled", {
+        Text = "FOV Filled",
         Default = false,
         Callback = function(Value)
             AB.FOVFilled = Value
         end
-    }})
+    })
 
-    AimbotRight:Slider({{
-        Title = "FOV Transparency",
+    AimbotRight:AddSlider("LegitAimbotFOVTrans", {
+        Text = "FOV Transparency",
         Default = 0.7,
         Min = 0,
         Max = 1,
+        Rounding = 2,
         Callback = function(Value)
             AB.FOVTransparency = Value
         end
-    }})
+    })
 
-    AimbotRight:Label({ Text = "FOV Color" }):ColorPicker({{
+    AimbotRight:AddLabel("FOV Color"):AddColorPicker("LegitAimbotFOVColor", {
         Default = Color3.fromRGB(180, 160, 255),
         Title = "FOV Color",
         Callback = function(Value)
             AB.FOVColor = Value
         end
-    }})
+    })
 end
 
 local GetService = setmetatable({}, {
@@ -3158,44 +3333,46 @@ do
         return
     end
 
-    local EspLeft = Tabs.Visuals:Section("ESP")
-    local EspRight = Tabs.Visuals:Section("ESP Colors")
-    local EspBars = Tabs.Visuals:Section("ESP Bars")
-    local EspFlags = Tabs.Visuals:Section("ESP Flags")
+    local EspLeft = Tabs.Visuals:AddLeftGroupbox("ESP")
+    local EspRight = Tabs.Visuals:AddRightGroupbox("ESP Colors")
+    local EspBars = Tabs.Visuals:AddRightGroupbox("ESP Bars")
+    local EspFlags = Tabs.Visuals:AddRightGroupbox("ESP Flags")
 
-    EspLeft:Toggle({{
-        Title = "Enabled",
+    EspLeft:AddToggle("EspEnabled", {
+        Text = "Enabled",
         Default = false,
         Callback = function(Value)
             EspConfig.Enabled = Value
         end
-    }})
+    })
 
-    EspLeft:Toggle({{
-        Title = "Show Local Player",
+    EspLeft:AddToggle("EspShowLocal", {
+        Text = "Show Local Player",
         Default = false,
         Callback = function(Value)
             EspConfig.ShowLocalPlayer = Value
         end
-    }})
+    })
 
-    EspLeft:Slider({{
-        Title = "Max Distance",
+    EspLeft:AddSlider("EspDistance", {
+        Text = "Max Distance",
         Default = 1000,
         Min = 50,
         Max = 5000,
+        Rounding = 0,
+        Suffix = " studs",
         Callback = function(Value)
             EspConfig.Distance = Value
         end
-    }})
+    })
 
-    EspLeft:Toggle({{
-        Title = "Boxes",
+    EspLeft:AddToggle("EspBoxes", {
+        Text = "Boxes",
         Default = false,
         Callback = function(Value)
             EspConfig.Boxes.Enabled = Value
         end
-    }})
+    })
 
     EspLeft:AddDropdown("EspBoxType", {
         Values = {"2D", "Corner"},
@@ -3207,181 +3384,181 @@ do
         end
     })
 
-    EspLeft:Toggle({{
-        Title = "Dynamic Boxes",
+    EspLeft:AddToggle("EspDynamicBoxes", {
+        Text = "Dynamic Boxes",
         Default = false,
         Callback = function(Value)
             EspConfig.Boxes.DynamicBoxes = Value
         end
-    }})
+    })
 
-    EspLeft:Toggle({{
-        Title = "Box Glow",
+    EspLeft:AddToggle("EspBoxGlow", {
+        Text = "Box Glow",
         Default = false,
         Callback = function(Value)
             EspConfig.Boxes["Box Glow"].Enabled = Value
         end
-    }})
+    })
 
-    EspLeft:Toggle({{
-        Title = "Filled Box",
+    EspLeft:AddToggle("EspFilledBox", {
+        Text = "Filled Box",
         Default = false,
         Callback = function(Value)
             EspConfig.Boxes.Filled.Enabled = Value
         end
-    }})
+    })
 
-    EspLeft:Toggle({{
-        Title = "Name",
+    EspLeft:AddToggle("EspName", {
+        Text = "Name",
         Default = false,
         Callback = function(Value)
             EspConfig.Texts.Name.Enabled = Value
         end
-    }})
+    })
 
-    EspLeft:Toggle({{
-        Title = "Distance",
+    EspLeft:AddToggle("EspDistanceText", {
+        Text = "Distance",
         Default = false,
         Callback = function(Value)
             EspConfig.Texts.Distance.Enabled = Value
         end
-    }})
+    })
 
-    EspLeft:Toggle({{
-        Title = "Weapon",
+    EspLeft:AddToggle("EspWeapon", {
+        Text = "Weapon",
         Default = false,
         Callback = function(Value)
             EspConfig.Texts.Weapon.Enabled = Value
         end
-    }})
+    })
 
-    EspBars:Toggle({{
-        Title = "Health Bar",
+    EspBars:AddToggle("EspHealthBar", {
+        Text = "Health Bar",
         Default = false,
         Callback = function(Value)
             EspConfig.Bars["Health Bar"].Enabled = Value
         end
-    }})
+    })
 
-    EspFlags:Toggle({{
-        Title = "Walking Flag",
+    EspFlags:AddToggle("EspWalking", {
+        Text = "Walking Flag",
         Default = false,
         Callback = function(Value)
             EspConfig.Flags.Walking.Enabled = Value
         end
-    }})
+    })
 
-    EspFlags:Toggle({{
-        Title = "Jumping Flag",
+    EspFlags:AddToggle("EspJumping", {
+        Text = "Jumping Flag",
         Default = false,
         Callback = function(Value)
             EspConfig.Flags.Jumping.Enabled = Value
         end
-    }})
+    })
 
-    EspFlags:Toggle({{
-        Title = "Swimming Flag",
+    EspFlags:AddToggle("EspSwimming", {
+        Text = "Swimming Flag",
         Default = false,
         Callback = function(Value)
             EspConfig.Flags.Swimming.Enabled = Value
         end
-    }})
+    })
 
-    EspRight:Label({ Text = "Box Glow Top" }):ColorPicker({{
+    EspRight:AddLabel("Box Glow Top"):AddColorPicker("EspGlowTop", {
         Default = Color3.fromRGB(0, 255, 255),
         Title = "Box Glow Top",
         Callback = function(Value)
             EspConfig.Boxes["Box Glow"].Top = Value
         end
-    }})
+    })
 
-    EspRight:Label({ Text = "Box Glow Bottom" }):ColorPicker({{
+    EspRight:AddLabel("Box Glow Bottom"):AddColorPicker("EspGlowBot", {
         Default = Color3.fromRGB(0, 255, 255),
         Title = "Box Glow Bottom",
         Callback = function(Value)
             EspConfig.Boxes["Box Glow"].Bot = Value
         end
-    }})
+    })
 
-    EspRight:Label({ Text = "Box Gradient Top" }):ColorPicker({{
+    EspRight:AddLabel("Box Gradient Top"):AddColorPicker("EspGradTop", {
         Default = Color3.fromRGB(255, 255, 255),
         Title = "Box Gradient Top",
         Callback = function(Value)
             EspConfig.Boxes.Gradients.Top = Value
         end
-    }})
+    })
 
-    EspRight:Label({ Text = "Box Gradient Bottom" }):ColorPicker({{
+    EspRight:AddLabel("Box Gradient Bottom"):AddColorPicker("EspGradBot", {
         Default = Color3.fromRGB(0, 255, 255),
         Title = "Box Gradient Bottom",
         Callback = function(Value)
             EspConfig.Boxes.Gradients.Bot = Value
         end
-    }})
+    })
 
-    EspRight:Label({ Text = "Filled Top" }):ColorPicker({{
+    EspRight:AddLabel("Filled Top"):AddColorPicker("EspFillTop", {
         Default = Color3.fromRGB(255, 255, 255),
         Title = "Filled Top",
         Callback = function(Value)
             EspConfig.Boxes.Filled.Top = Value
         end
-    }})
+    })
 
-    EspRight:Label({ Text = "Filled Bottom" }):ColorPicker({{
+    EspRight:AddLabel("Filled Bottom"):AddColorPicker("EspFillBot", {
         Default = Color3.fromRGB(0, 255, 255),
         Title = "Filled Bottom",
         Callback = function(Value)
             EspConfig.Boxes.Filled.Bot = Value
         end
-    }})
+    })
 
-    EspRight:Label({ Text = "Name Color" }):ColorPicker({{
+    EspRight:AddLabel("Name Color"):AddColorPicker("EspNameColor", {
         Default = Color3.fromRGB(255, 255, 255),
         Title = "Name Color",
         Callback = function(Value)
             EspConfig.Texts.Name.Color = Value
         end
-    }})
+    })
 
-    EspRight:Label({ Text = "Distance Color" }):ColorPicker({{
+    EspRight:AddLabel("Distance Color"):AddColorPicker("EspDistColor", {
         Default = Color3.fromRGB(255, 255, 255),
         Title = "Distance Color",
         Callback = function(Value)
             EspConfig.Texts.Distance.Color = Value
         end
-    }})
+    })
 
-    EspRight:Label({ Text = "Weapon Color" }):ColorPicker({{
+    EspRight:AddLabel("Weapon Color"):AddColorPicker("EspWeaponColor", {
         Default = Color3.fromRGB(255, 255, 255),
         Title = "Weapon Color",
         Callback = function(Value)
             EspConfig.Texts.Weapon.Color = Value
         end
-    }})
+    })
 
-    EspRight:Label({ Text = "Health Top" }):ColorPicker({{
+    EspRight:AddLabel("Health Top"):AddColorPicker("EspHealthTop", {
         Default = Color3.fromRGB(0, 255, 0),
         Title = "Health Top",
         Callback = function(Value)
             EspConfig.Bars["Health Bar"].Top = Value
         end
-    }})
+    })
 
-    EspRight:Label({ Text = "Health Mid" }):ColorPicker({{
+    EspRight:AddLabel("Health Mid"):AddColorPicker("EspHealthMid", {
         Default = Color3.fromRGB(255, 170, 0),
         Title = "Health Mid",
         Callback = function(Value)
             EspConfig.Bars["Health Bar"].Mid = Value
         end
-    }})
+    })
 
-    EspRight:Label({ Text = "Health Bottom" }):ColorPicker({{
+    EspRight:AddLabel("Health Bottom"):AddColorPicker("EspHealthBot", {
         Default = Color3.fromRGB(255, 0, 0),
         Title = "Health Bottom",
         Callback = function(Value)
             EspConfig.Bars["Health Bar"].Bot = Value
         end
-    }})
+    })
 
     RegisterCleanup(function()
         if EspLib and EspLib.Unload then
@@ -3391,7 +3568,7 @@ do
 end
 
 do
-    local FistAuraGroup = Tabs.Misc:Section("Fist Aura")
+    local FistAuraGroup = Tabs.Misc:AddLeftGroupbox("Fist Aura")
 
     local MeleeRemote = ReplicatedStorage:WaitForChild("meleeEvent")
 
@@ -3451,8 +3628,8 @@ do
     FATargetLine.Transparency = 1
     FATargetLine.Color = Color3.fromRGB(50, 150, 255)
 
-    FistAuraGroup:Toggle({{
-        Title = "Enabled",
+    FistAuraGroup:AddToggle("FistAuraEnabled", {
+        Text = "Enabled",
         Default = false,
         Callback = function(Value)
             FAState.Enabled = Value
@@ -3461,20 +3638,22 @@ do
                 FATargetLine.Visible = false
             end
         end
-    }})
+    })
 
-    FistAuraGroup:Slider({{
-        Title = "Radius",
+    FistAuraGroup:AddSlider("FistAuraRadius", {
+        Text = "Radius",
         Default = 12,
         Min = 1,
         Max = 12,
+        Rounding = 1,
+        Suffix = " studs",
         Callback = function(Value)
             FAState.Radius = Value
         end
-    }})
+    })
 
-    FistAuraGroup:Toggle({{
-        Title = "Show Radius",
+    FistAuraGroup:AddToggle("FistAuraShowRadius", {
+        Text = "Show Radius",
         Default = false,
         Callback = function(Value)
             FAState.ShowRadius = Value
@@ -3482,10 +3661,10 @@ do
                 for _, line in FARadiusLines do line.Visible = false end
             end
         end
-    }})
+    })
 
-    FistAuraGroup:Toggle({{
-        Title = "Show Target",
+    FistAuraGroup:AddToggle("FistAuraShowTarget", {
+        Text = "Show Target",
         Default = false,
         Callback = function(Value)
             FAState.ShowTarget = Value
@@ -3493,7 +3672,7 @@ do
                 FATargetLine.Visible = false
             end
         end
-    }})
+    })
 
     FistAuraGroup:AddDropdown("FistAuraTeams", {
         Values = {"Guards", "Inmates", "Criminals"},
@@ -3523,13 +3702,13 @@ do
         end
     })
 
-    FistAuraGroup:Toggle({{
-        Title = "Friend Check",
+    FistAuraGroup:AddToggle("FistAuraFriendCheck", {
+        Text = "Friend Check",
         Default = false,
         Callback = function(Value)
             FAState.FriendCheck = Value
         end
-    }})
+    })
 
     do
         local function GetPlayerNames()
@@ -3677,7 +3856,7 @@ do
 end
 
 do
-    local ArrestAuraGroup = Tabs.Misc:Section("Arrest Aura")
+    local ArrestAuraGroup = Tabs.Misc:AddLeftGroupbox("Arrest Aura")
 
     local ArrestRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("ArrestPlayer")
 
@@ -3741,8 +3920,8 @@ do
     TargetLine.Transparency = 1
     TargetLine.Color = Color3.fromRGB(255, 50, 50)
 
-    ArrestAuraGroup:Toggle({{
-        Title = "Enabled",
+    ArrestAuraGroup:AddToggle("ArrestAuraEnabled", {
+        Text = "Enabled",
         Default = false,
         Callback = function(Value)
             AAState.Enabled = Value
@@ -3751,28 +3930,30 @@ do
                 TargetLine.Visible = false
             end
         end
-    }})
+    })
 
-    ArrestAuraGroup:Slider({{
-        Title = "Radius",
+    ArrestAuraGroup:AddSlider("ArrestAuraRadius", {
+        Text = "Radius",
         Default = 8,
         Min = 1,
         Max = 8,
+        Rounding = 1,
+        Suffix = " studs",
         Callback = function(Value)
             AAState.Radius = Value
         end
-    }})
+    })
 
-    ArrestAuraGroup:Toggle({{
-        Title = "Hand Check",
+    ArrestAuraGroup:AddToggle("ArrestAuraHandCheck", {
+        Text = "Hand Check",
         Default = false,
         Callback = function(Value)
             AAState.HandCheck = Value
         end
-    }})
+    })
 
-    ArrestAuraGroup:Toggle({{
-        Title = "Cooldown Bar",
+    ArrestAuraGroup:AddToggle("ArrestAuraCooldownBar", {
+        Text = "Cooldown Bar",
         Default = false,
         Callback = function(Value)
             AAState.CooldownBar = Value
@@ -3808,10 +3989,10 @@ do
                 cdHolder, cdFrame, cdLabel = nil, nil, nil
             end
         end
-    }})
+    })
 
-    ArrestAuraGroup:Toggle({{
-        Title = "Show Radius",
+    ArrestAuraGroup:AddToggle("ArrestAuraShowRadius", {
+        Text = "Show Radius",
         Default = false,
         Callback = function(Value)
             AAState.ShowRadius = Value
@@ -3819,10 +4000,10 @@ do
                 for _, line in RadiusLines do line.Visible = false end
             end
         end
-    }})
+    })
 
-    ArrestAuraGroup:Toggle({{
-        Title = "Show Target",
+    ArrestAuraGroup:AddToggle("ArrestAuraShowTarget", {
+        Text = "Show Target",
         Default = false,
         Callback = function(Value)
             AAState.ShowTarget = Value
@@ -3830,15 +4011,15 @@ do
                 TargetLine.Visible = false
             end
         end
-    }})
+    })
 
-    ArrestAuraGroup:Toggle({{
-        Title = "Friend Check",
+    ArrestAuraGroup:AddToggle("ArrestAuraFriendCheck", {
+        Text = "Friend Check",
         Default = false,
         Callback = function(Value)
             AAState.FriendCheck = Value
         end
-    }})
+    })
 
     do
         local function GetPlayerNames()
@@ -3979,7 +4160,7 @@ do
 
                 if success and didArrest then
                     arrestCooldown = os.clock() + 7
-                    Window:Notify("Arrested " .. closestPlayer.Name, 3)
+                    Library:Notify("Arrested " .. closestPlayer.Name, 3)
                 end
 
                 if AAState.ShowTarget then
@@ -4018,7 +4199,7 @@ do
 end
 
 do
-    local AntiInvisibleGroup = Tabs.Rage:Section("Anti Invisible")
+    local AntiInvisibleGroup = Tabs.Rage:AddRightGroupbox("Anti Invisible")
 
     local AIEnabled = false
     local invisAnimId = "215384594"
@@ -4052,8 +4233,8 @@ do
         end
     end
 
-    AntiInvisibleGroup:Toggle({{
-        Title = "Enabled",
+    AntiInvisibleGroup:AddToggle("AntiInvisibleEnabled", {
+        Text = "Enabled",
         Default = false,
         Callback = function(Value)
             AIEnabled = Value
@@ -4065,7 +4246,7 @@ do
                 end
             end
         end
-    }})
+    })
 
     TrackConnection(Players.PlayerAdded:Connect(function(player)
         TrackConnection(player.CharacterAdded:Connect(function(char)
@@ -4087,7 +4268,7 @@ do
 end
 
 do
-    local AntiTaseGroup = Tabs.Misc:Section("Anti Tase")
+    local AntiTaseGroup = Tabs.Misc:AddRightGroupbox("Anti Tase")
 
     local ATEnabled = false
     local taseOldFn, taseConn = nil, nil
@@ -4125,8 +4306,8 @@ do
         end
     end
 
-    AntiTaseGroup:Toggle({{
-        Title = "Enabled",
+    AntiTaseGroup:AddToggle("AntiTaseEnabled", {
+        Text = "Enabled",
         Default = false,
         Callback = function(Value)
             ATEnabled = Value
@@ -4136,7 +4317,7 @@ do
                 unhookTaseHandler()
             end
         end
-    }})
+    })
 
     TrackConnection(LocalPlayer.CharacterAdded:Connect(function()
         if ATEnabled then
@@ -4151,18 +4332,18 @@ do
 end
 
 do
-    local PingWarningGroup = Tabs.Misc:Section("Ping Warning")
+    local PingWarningGroup = Tabs.Misc:AddRightGroupbox("Ping Warning")
 
     local PingWarningEnabled = false
     local LastWarning = 0
 
-    PingWarningGroup:Toggle({{
-        Title = "Enabled",
+    PingWarningGroup:AddToggle("PingWarningEnabled", {
+        Text = "Enabled",
         Default = false,
         Callback = function(Value)
             PingWarningEnabled = Value
         end
-    }})
+    })
 
     TrackConnection(RunService.Heartbeat:Connect(function()
         if not PingWarningEnabled then return end
@@ -4172,14 +4353,14 @@ do
         end)
 
         if success and Ping >= 300 and (tick() - LastWarning) >= 5 then
-            Window:Notify("High Ping Warning: " .. Ping .. "ms", 4)
+            Library:Notify("High Ping Warning: " .. Ping .. "ms", 4)
             LastWarning = tick()
         end
     end))
 end
 
 do
-    local RemoveJumpCooldownGroup = Tabs.Misc:Section("Remove Jump Cooldown")
+    local RemoveJumpCooldownGroup = Tabs.Misc:AddRightGroupbox("Remove Jump Cooldown")
 
     local NJCEnabled = false
     local jumpConnDisabled = nil
@@ -4195,8 +4376,8 @@ do
         end
     end
 
-    RemoveJumpCooldownGroup:Toggle({{
-        Title = "Enabled",
+    RemoveJumpCooldownGroup:AddToggle("RemoveJumpCooldownEnabled", {
+        Text = "Enabled",
         Default = false,
         Callback = function(Value)
             NJCEnabled = Value
@@ -4209,7 +4390,7 @@ do
                 jumpConnDisabled = nil
             end
         end
-    }})
+    })
 
     TrackConnection(LocalPlayer.CharacterAdded:Connect(function(character)
         if NJCEnabled then
@@ -4226,7 +4407,7 @@ do
 end
 
 do
-    local PickupAuraGroup = Tabs.Misc:Section("Pickup Aura")
+    local PickupAuraGroup = Tabs.Misc:AddRightGroupbox("Pickup Aura")
 
     local PAState = {
         Enabled = false,
@@ -4245,8 +4426,8 @@ do
         end
     end
 
-    PickupAuraGroup:Toggle({{
-        Title = "Enabled",
+    PickupAuraGroup:AddToggle("PickupAuraEnabled", {
+        Text = "Enabled",
         Default = false,
         Callback = function(Value)
             PAState.Enabled = Value
@@ -4258,7 +4439,7 @@ do
                 table.clear(pickupItems)
             end
         end
-    }})
+    })
 
     PickupAuraGroup:AddDropdown("PickupAuraItems", {
         Values = {"M9", "Hammer", "Crude Knife", "Key card"},
@@ -4274,25 +4455,29 @@ do
         end
     })
 
-    PickupAuraGroup:Slider({{
-        Title = "Radius",
+    PickupAuraGroup:AddSlider("PickupAuraRadius", {
+        Text = "Radius",
         Default = 10,
         Min = 5,
         Max = 30,
+        Rounding = 1,
+        Suffix = " studs",
         Callback = function(Value)
             PAState.Radius = Value
         end
-    }})
+    })
 
-    PickupAuraGroup:Slider({{
-        Title = "Cooldown",
+    PickupAuraGroup:AddSlider("PickupAuraCooldown", {
+        Text = "Cooldown",
         Default = 0.5,
         Min = 0.1,
         Max = 1,
+        Rounding = 1,
+        Suffix = "s",
         Callback = function(Value)
             PAState.Cooldown = Value
         end
-    }})
+    })
 
     TrackConnection(workspace.ChildAdded:Connect(function(obj)
         if PAState.Enabled then
@@ -4343,7 +4528,7 @@ do
 end
 
 do
-    local VehicleFlyGroup = Tabs.Misc:Section("Vehicle Fly")
+    local VehicleFlyGroup = Tabs.Misc:AddLeftGroupbox("Vehicle Fly")
 
     local VFState = {
         Enabled = false,
@@ -4351,42 +4536,47 @@ do
         VerticalSpeed = 60,
     }
 
-    VehicleFlyGroup:Toggle({{
-        Title = "Enabled",
+    VehicleFlyGroup:AddToggle("VehicleFlyEnabled", {
+        Text = "Enabled",
         Default = false,
         Callback = function(Value)
             VFState.Enabled = Value
         end
-    }})
+    })
 
-    VehicleFlyGroup:Label({ Text = "Toggle Keybind" }):Keybind({{
+    VehicleFlyGroup:AddLabel("Toggle Keybind"):AddKeyPicker("VehicleFlyKeybind", {
         Default = "V",
         Mode = "Toggle",
-        Title = "Vehicle Fly Key",
+        Text = "Vehicle Fly Key",
+        NoUI = false,
         Callback = function(Value)
             VFState.Enabled = Value
         end
-    }})
+    })
 
-    VehicleFlyGroup:Slider({{
-        Title = "Speed",
+    VehicleFlyGroup:AddSlider("VehicleFlySpeed", {
+        Text = "Speed",
         Default = 80,
         Min = 10,
         Max = 300,
+        Rounding = 0,
+        Suffix = " studs/s",
         Callback = function(Value)
             VFState.Speed = Value
         end
-    }})
+    })
 
-    VehicleFlyGroup:Slider({{
-        Title = "Vertical Speed",
+    VehicleFlyGroup:AddSlider("VehicleFlyVertical", {
+        Text = "Vertical Speed",
         Default = 60,
         Min = 10,
         Max = 200,
+        Rounding = 0,
+        Suffix = " studs/s",
         Callback = function(Value)
             VFState.VerticalSpeed = Value
         end
-    }})
+    })
 
     TrackConnection(RunService.Heartbeat:Connect(function()
         if not VFState.Enabled then return end
@@ -4455,7 +4645,7 @@ do
 end
 
 do
-    local NoclipGroup = Tabs.Misc:Section("Noclip")
+    local NoclipGroup = Tabs.Misc:AddLeftGroupbox("Noclip")
 
     local NC = {
         Enabled = false,
@@ -4511,22 +4701,23 @@ do
         end
     end
 
-    NoclipGroup:Toggle({{
-        Title = "Enabled",
+    NoclipGroup:AddToggle("NoclipEnabled", {
+        Text = "Enabled",
         Default = false,
         Callback = function(Value)
             SetNoclip(Value)
         end
-    }})
+    })
 
-    NoclipGroup:Label({ Text = "Keybind" }):Keybind({{
+    NoclipGroup:AddLabel("Keybind"):AddKeyPicker("NoclipKeybind", {
         Default = "N",
         Mode = "Toggle",
-        Title = "Noclip Key",
+        Text = "Noclip Key",
+        NoUI = false,
         Callback = function(Value)
             SetNoclip(Value)
         end
-    }})
+    })
 
     TrackConnection(LocalPlayer.CharacterAdded:Connect(function()
         task.wait(0.4)
@@ -4541,7 +4732,7 @@ do
 end
 
 do
-    local GunModGroup = Tabs.Rage:Section("Gun Modifications")
+    local GunModGroup = Tabs.Rage:AddLeftGroupbox("Gun Modifications")
 
     local GunModState = {
         Enabled = false,
@@ -4603,8 +4794,8 @@ do
         cleanConnections()
     end
 
-    GunModGroup:Toggle({{
-        Title = "Enabled",
+    GunModGroup:AddToggle("GunModificationsEnabled", {
+        Text = "Enabled",
         Default = false,
         Callback = function(Value)
             GunModState.Enabled = Value
@@ -4614,13 +4805,15 @@ do
                 stopGunMods()
             end
         end
-    }})
+    })
 
-    GunModGroup:Slider({{
-        Title = "Range",
+    GunModGroup:AddSlider("GunModRange", {
+        Text = "Range",
         Default = 150,
         Min = 1,
         Max = 9999,
+        Rounding = 0,
+        Suffix = " studs",
         Callback = function(Value)
             GunModState.Range = Value
             if GunModState.Enabled and LocalPlayer.Character then
@@ -4635,13 +4828,15 @@ do
                 end
             end
         end
-    }})
+    })
 
-    GunModGroup:Slider({{
-        Title = "Spread Radius",
+    GunModGroup:AddSlider("GunModSpread", {
+        Text = "Spread Radius",
         Default = 0,
         Min = 0,
         Max = 1,
+        Rounding = 2,
+        Suffix = " studs",
         Callback = function(Value)
             GunModState.SpreadRadius = Value
             if GunModState.Enabled and LocalPlayer.Character then
@@ -4656,13 +4851,15 @@ do
                 end
             end
         end
-    }})
+    })
 
-    GunModGroup:Slider({{
-        Title = "Fire Rate",
+    GunModGroup:AddSlider("GunModFireRate", {
+        Text = "Fire Rate",
         Default = 0.1,
         Min = 0.01,
         Max = 1,
+        Rounding = 2,
+        Suffix = "s",
         Callback = function(Value)
             GunModState.FireRate = Value
             if GunModState.Enabled and LocalPlayer.Character then
@@ -4677,7 +4874,7 @@ do
                 end
             end
         end
-    }})
+    })
 
     RegisterCleanup(function()
         stopGunMods()
@@ -4685,7 +4882,7 @@ do
 end
 
 do
-    local SimulateKeycardGroup = Tabs.Misc:Section("Simulate Keycard")
+    local SimulateKeycardGroup = Tabs.Misc:AddLeftGroupbox("Simulate Keycard")
 
     local CollectionService = game:GetService("CollectionService")
 
@@ -4759,8 +4956,8 @@ do
         end
     end
 
-    SimulateKeycardGroup:Toggle({{
-        Title = "Simulate Keycard",
+    SimulateKeycardGroup:AddToggle("SimulateKeycardEnabled", {
+        Text = "Simulate Keycard",
         Default = false,
         Callback = function(Value)
             SKState.Enabled = Value
@@ -4770,7 +4967,7 @@ do
                 stop()
             end
         end
-    }})
+    })
 
     RegisterCleanup(function()
         stop()
@@ -4778,7 +4975,7 @@ do
 end
 
 do
-    local TracerGroup = Tabs.Visuals:Section("Bullet Tracers")
+    local TracerGroup = Tabs.Visuals:AddLeftGroupbox("Bullet Tracers")
 
     local BT = {
         Enabled = false,
@@ -4891,8 +5088,8 @@ do
         end
     end))
 
-    TracerGroup:Toggle({{
-        Title = "Enabled",
+    TracerGroup:AddToggle("BulletTracersEnabled", {
+        Text = "Enabled",
         Default = false,
         Callback = function(Value)
             BT.Enabled = Value
@@ -4910,52 +5107,54 @@ do
                 clearAll()
             end
         end
-    }})
+    })
 
-    TracerGroup:Toggle({{
-        Title = "Use Drawing",
+    TracerGroup:AddToggle("BulletTracersDrawing", {
+        Text = "Use Drawing",
         Default = true,
         Callback = function(Value)
             BT.UseDrawing = Value
             clearAll()
         end
-    }})
+    })
 
-    TracerGroup:Dropdown({{
+    TracerGroup:AddDropdown("BulletTracersMaterial", {
         Values = materials,
         Default = 1,
         Multi = false,
-        Title = "Material (Part mode)",
+        Text = "Material (Part mode)",
         Callback = function(Value)
             BT.Material = Value
         end
-    }})
+    })
 
-    TracerGroup:Label({ Text = "Color" }):ColorPicker({{
+    TracerGroup:AddLabel("Color"):AddColorPicker("BulletTracersColor", {
         Default = Color3.fromRGB(144, 144, 171),
         Title = "Tracer Color",
         Callback = function(Value)
             BT.Color = Value
         end
-    }})
+    })
 
-    TracerGroup:Slider({{
-        Title = "Lifetime",
+    TracerGroup:AddSlider("BulletTracersLifetime", {
+        Text = "Lifetime",
         Default = 0.25,
         Min = 0.05,
         Max = 1,
+        Rounding = 2,
+        Suffix = "s",
         Callback = function(Value)
             BT.Lifetime = Value
         end
-    }})
+    })
 
-    TracerGroup:Toggle({{
-        Title = "Fade Out",
+    TracerGroup:AddToggle("BulletTracersFade", {
+        Text = "Fade Out",
         Default = true,
         Callback = function(Value)
             BT.Fade = Value
         end
-    }})
+    })
 
     RegisterCleanup(function()
         PL.removeBulletHandler("BulletTracers")
@@ -4964,7 +5163,7 @@ do
 end
 
 do
-    local DamageGroup = Tabs.Visuals:Section("Damage Indicator")
+    local DamageGroup = Tabs.Visuals:AddRightGroupbox("Damage Indicator")
 
     local DI = {
         Enabled = false,
@@ -5131,8 +5330,8 @@ do
         end
     end
 
-    DamageGroup:Toggle({{
-        Title = "Enabled",
+    DamageGroup:AddToggle("DamageIndicatorEnabled", {
+        Text = "Enabled",
         Default = false,
         Callback = function(Value)
             DI.Enabled = Value
@@ -5148,23 +5347,23 @@ do
                 currentLabel = nil
             end
         end
-    }})
+    })
 
     local fontList = {"GothamBlack", "GothamBold", "SourceSansBold", "ArialBold", "Cartoon", "Code", "Highway", "SciFi"}
-    DamageGroup:Dropdown({{
+    DamageGroup:AddDropdown("DamageIndicatorFont", {
         Values = fontList,
         Default = 1,
         Multi = false,
-        Title = "Font",
+        Text = "Font",
         Callback = function(Value)
             DI.Font = Value
             if currentLabel then
                 currentLabel.Font = Enum.Font[Value] or Enum.Font.GothamBlack
             end
         end
-    }})
+    })
 
-    DamageGroup:Label({ Text = "Color" }):ColorPicker({{
+    DamageGroup:AddLabel("Color"):AddColorPicker("DamageIndicatorColor", {
         Default = Color3.fromRGB(255, 80, 80),
         Title = "Damage Color",
         Callback = function(Value)
@@ -5173,7 +5372,7 @@ do
                 currentLabel.TextColor3 = Value
             end
         end
-    }})
+    })
 
     RegisterCleanup(function()
         PL.removeBulletHandler("DamageIndicator")
@@ -5187,7 +5386,7 @@ do
 end
 
 do
-    local ArrestBotGroup = Tabs.Rage:Section("Arrest Bot")
+    local ArrestBotGroup = Tabs.Rage:AddRightGroupbox("Arrest Bot")
     
     local AB = {
         Enabled = false,
@@ -5414,19 +5613,19 @@ do
 
     local function TeleportBehindAndArrest(player)
         if not player or not player.Character then
-            Window:Notify("Player not found!", 3)
+            Library:Notify("Player not found!", 3)
             return false
         end
         
         local char = LocalPlayer.Character
         if not char then
-            Window:Notify("You don't have a character!", 3)
+            Library:Notify("You don't have a character!", 3)
             return false
         end
         
         local myRoot = char:FindFirstChild("HumanoidRootPart")
         if not myRoot then
-            Window:Notify("You don't have a RootPart!", 3)
+            Library:Notify("You don't have a RootPart!", 3)
             return false
         end
 
@@ -5434,7 +5633,7 @@ do
 
         local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
         if not targetRoot then
-            Window:Notify("Target has no RootPart!", 3)
+            Library:Notify("Target has no RootPart!", 3)
             return false
         end
 
@@ -5442,7 +5641,7 @@ do
         behindPos = Vector3.new(behindPos.X, behindPos.Y + 1, behindPos.Z)
         
         if not TeleportTo(behindPos) then
-            Window:Notify("Failed to teleport!", 3)
+            Library:Notify("Failed to teleport!", 3)
             return false
         end
         
@@ -5476,8 +5675,8 @@ do
     local selectedPlayerName = nil
     local dropdownObject = nil
 
-    ArrestBotGroup:Toggle({{
-        Title = "Enabled",
+    ArrestBotGroup:AddToggle("ArrestBotEnabled", {
+        Text = "Enabled",
         Default = false,
         Callback = function(Value)
             AB.Enabled = Value
@@ -5490,7 +5689,7 @@ do
                 AB.IsProcessing = false
             end
         end
-    }})
+    })
 
     local function RefreshDropdown()
         local criminals = GetCriminalPlayers()
@@ -5502,7 +5701,7 @@ do
                 selectedPlayerName = criminals[1]
                 dropdownObject:SetValue(criminals[1])
                 AB.SelectedTarget = GetPlayerByName(criminals[1])
-                Window:Notify("Auto-selected: " .. criminals[1], 3)
+                Library:Notify("Auto-selected: " .. criminals[1], 3)
             elseif #criminals == 0 then
                 selectedPlayerName = nil
                 AB.SelectedTarget = nil
@@ -5510,20 +5709,20 @@ do
         end
     end
 
-    ArrestBotGroup:Dropdown({{
+    ArrestBotGroup:AddDropdown("ArrestBotTarget", {
         Values = GetCriminalPlayers(),
         Default = 1,
         Multi = false,
-        Title = "Target Criminal",
+        Text = "Target Criminal",
         Callback = function(Value)
             selectedPlayerName = Value
             AB.SelectedTarget = GetPlayerByName(Value)
             
             if AB.SelectedTarget then
-                Window:Notify("Target set to: " .. AB.SelectedTarget.Name, 3)
+                Library:Notify("Target set to: " .. AB.SelectedTarget.Name, 3)
             end
         end
-    }})
+    })
 
     task.wait(0.1)
     dropdownObject = Options.ArrestBotTarget
@@ -5545,50 +5744,52 @@ do
     task.wait(0.5)
     RefreshDropdown()
 
-    ArrestBotGroup:Button({ Title = "Arrest Now", Callback = function() if not AB.Enabled then
-            Window:Notify("Enable Arrest Bot first!", 3)
+    ArrestBotGroup:AddButton("Arrest Now", function()
+        if not AB.Enabled then
+            Library:Notify("Enable Arrest Bot first!", 3)
             return
         end
         
         if AB.IsProcessing then
-            Window:Notify("Already processing!", 3)
+            Library:Notify("Already processing!", 3)
             return
         end
         
         if not AB.SelectedTarget then
-            Window:Notify("Select a target first!", 3)
+            Library:Notify("Select a target first!", 3)
             return
         end
         
         if AB.SelectedTarget.Team and AB.SelectedTarget.Team.Name ~= "Criminals" then
-            Window:Notify("Target is no longer a criminal!", 3)
+            Library:Notify("Target is no longer a criminal!", 3)
             return
         end
         
         if not AB.SelectedTarget.Character then
-            Window:Notify("Target is dead or not spawned!", 3)
+            Library:Notify("Target is dead or not spawned!", 3)
             return
         end
         
         local humanoid = AB.SelectedTarget.Character:FindFirstChildOfClass("Humanoid")
         if not humanoid or humanoid.Health <= 0 then
-            Window:Notify("Target is dead!", 3)
+            Library:Notify("Target is dead!", 3)
             return
         end
         
         task.spawn(function()
             AB.IsProcessing = true
-            Window:Notify("Arresting " .. AB.SelectedTarget.Name .. "...", 3)
+            Library:Notify("Arresting " .. AB.SelectedTarget.Name .. "...", 3)
             
             local success = TeleportBehindAndArrest(AB.SelectedTarget)
             
             if success then
-                Window:Notify("Successfully arrested " .. AB.SelectedTarget.Name .. "!", 4)
+                Library:Notify("Successfully arrested " .. AB.SelectedTarget.Name .. "!", 4)
             else
-                Window:Notify("Failed to arrest " .. AB.SelectedTarget.Name, 3)
+                Library:Notify("Failed to arrest " .. AB.SelectedTarget.Name, 3)
             end
             
-            AB.IsProcessing = false end })
+            AB.IsProcessing = false
+        end)
     end)
 
     TrackConnection(RunService.RenderStepped:Connect(function()
@@ -5610,10 +5811,10 @@ do
                 task.spawn(function()
                     if not AB.IsProcessing then
                         AB.IsProcessing = true
-                        Window:Notify("arresting " .. AB.SelectedTarget.Name .. "...", 3)
+                        Library:Notify("arresting " .. AB.SelectedTarget.Name .. "...", 3)
                         local success = TeleportBehindAndArrest(AB.SelectedTarget)
                         if success then
-                            Window:Notify("arrested " .. AB.SelectedTarget.Name .. "!", 4)
+                            Library:Notify("arrested " .. AB.SelectedTarget.Name .. "!", 4)
                         end
                         AB.IsProcessing = false
                     end
@@ -5622,27 +5823,31 @@ do
         end
     end))
 
-    ArrestBotGroup:Divider()
+    ArrestBotGroup:AddDivider()
     
-    ArrestBotGroup:Slider({{
-        Title = "Auto Arrest Range",
+    ArrestBotGroup:AddSlider("ArrestBotAutoRange", {
+        Text = "Auto Arrest Range",
         Default = 12,
         Min = 3,
         Max = 30,
+        Rounding = 1,
+        Suffix = " studs",
         Callback = function(Value)
             AB.AutoArrestRange = Value
         end
-    }})
+    })
     
-    ArrestBotGroup:Slider({{
-        Title = "Follow Duration",
+    ArrestBotGroup:AddSlider("ArrestBotFollowDuration", {
+        Text = "Follow Duration",
         Default = 0.8,
         Min = 0.3,
         Max = 2.0,
+        Rounding = 1,
+        Suffix = "s",
         Callback = function(Value)
             AB.FollowDuration = Value
         end
-    }})
+    })
 
     RegisterCleanup(function()
         AB.Enabled = false
@@ -5656,7 +5861,7 @@ do
 end
 
 do
-    local AntiLoopKillGroup = Tabs.Rage:Section("Anti Loop Kill")
+    local AntiLoopKillGroup = Tabs.Rage:AddRightGroupbox("Anti Loop Kill")
     
     local ALK = {
         Enabled = false,
@@ -5819,7 +6024,7 @@ do
         end
         
         if success then
-            Window:Notify("Arrested " .. player.Name .. " for loop killing", 4)
+            Library:Notify("Arrested " .. player.Name .. " for loop killing", 4)
             return true
         else
             return false
@@ -5966,54 +6171,60 @@ do
             ALK.TeleportedPlayers = {}
             ALK.LastPositions = {}
             task.spawn(AntiLoopKillLoop)
-            Window:Notify("Anti Loop Kill enabled!", 3)
+            Library:Notify("Anti Loop Kill enabled!", 3)
         else
             ALK.LoopRunning = false
             ALK.ProcessingQueue = false
             ALK.DetectionQueue = {}
             ALK.TeleportedPlayers = {}
             ALK.LastPositions = {}
-            Window:Notify("Anti Loop Kill disabled!", 3)
+            Library:Notify("Anti Loop Kill disabled!", 3)
         end
     end
 
-    AntiLoopKillGroup:Toggle({{
-        Title = "Enabled",
+    AntiLoopKillGroup:AddToggle("AntiLoopKillEnabled", {
+        Text = "Enabled",
         Default = false,
         Callback = function(Value)
             SetAntiLoopKillEnabled(Value)
         end
-    }})
+    })
     
-    AntiLoopKillGroup:Slider({{
-        Title = "Detection Range",
+    AntiLoopKillGroup:AddSlider("AntiLoopKillDetectionRange", {
+        Text = "Detection Range",
         Default = 4,
         Min = 1,
         Max = 10,
+        Rounding = 1,
+        Suffix = " studs",
         Callback = function(Value)
             ALK.DetectionRange = Value
         end
-    }})
+    })
     
-    AntiLoopKillGroup:Slider({{
-        Title = "Velocity Threshold",
+    AntiLoopKillGroup:AddSlider("AntiLoopKillVelocityThreshold", {
+        Text = "Velocity Threshold",
         Default = 80,
         Min = 40,
         Max = 200,
+        Rounding = 0,
+        Suffix = " studs/s",
         Callback = function(Value)
             ALK.VelocityThreshold = Value
         end
-    }})
+    })
     
-    AntiLoopKillGroup:Slider({{
-        Title = "Check Interval",
+    AntiLoopKillGroup:AddSlider("AntiLoopKillCheckInterval", {
+        Text = "Check Interval",
         Default = 0.05,
         Min = 0.03,
         Max = 0.2,
+        Rounding = 2,
+        Suffix = "s",
         Callback = function(Value)
             ALK.TeleportCheckInterval = Value
         end
-    }})
+    })
 
     RegisterCleanup(function()
         ALK.Enabled = false
@@ -6331,47 +6542,47 @@ do
         end
     end))
 
-    local LightingLeft = Tabs.World:Section("Lighting")
-    local AtmosphereBox = Tabs.World:Section("Atmosphere & Fog")
-    local EffectsLeft = Tabs.World:Section("Post-Processing")
-    local EffectsRight = Tabs.World:Section("Color Correction")
-    local SkyboxBox = Tabs.World:Section("Skybox")
-    local LocalBox = Tabs.World:Section("Local Character")
+    local LightingLeft = Tabs.World:AddLeftGroupbox("Lighting")
+    local AtmosphereBox = Tabs.World:AddRightGroupbox("Atmosphere & Fog")
+    local EffectsLeft = Tabs.World:AddLeftGroupbox("Post-Processing")
+    local EffectsRight = Tabs.World:AddRightGroupbox("Color Correction")
+    local SkyboxBox = Tabs.World:AddLeftGroupbox("Skybox")
+    local LocalBox = Tabs.World:AddRightGroupbox("Local Character")
 
-    LightingLeft:Label({ Text = "Ambient" }):ColorPicker({{
+    LightingLeft:AddLabel("Ambient"):AddColorPicker("WorldAmbient", {
         Default = Defaults.Ambient, Title = "Ambient",
         Callback = function(v) Lighting.Ambient = v end
-    }})
-    LightingLeft:Label({ Text = "Outdoor Ambient" }):ColorPicker({{
+    })
+    LightingLeft:AddLabel("Outdoor Ambient"):AddColorPicker("WorldOutdoorAmbient", {
         Default = Defaults.OutdoorAmbient, Title = "Outdoor Ambient",
         Callback = function(v) Lighting.OutdoorAmbient = v end
-    }})
-    LightingLeft:Slider({{
-        Title = "Brightness", Default = Defaults.Brightness, Min = 0, Max = 10,
+    })
+    LightingLeft:AddSlider("WorldBrightness", {
+        Text = "Brightness", Default = Defaults.Brightness, Min = 0, Max = 10, Rounding = 2,
         Callback = function(v) Lighting.Brightness = v end
-    }})
-    LightingLeft:Slider({{
-        Title = "Clock Time", Default = Defaults.ClockTime, Min = 0, Max = 24,
+    })
+    LightingLeft:AddSlider("WorldClockTime", {
+        Text = "Clock Time", Default = Defaults.ClockTime, Min = 0, Max = 24, Rounding = 1,
         Callback = function(v) Lighting.ClockTime = v end
-    }})
-    LightingLeft:Slider({{
-        Title = "Geographic Latitude", Default = Defaults.GeographicLatitude, Min = -90, Max = 90,
+    })
+    LightingLeft:AddSlider("WorldLatitude", {
+        Text = "Geographic Latitude", Default = Defaults.GeographicLatitude, Min = -90, Max = 90, Rounding = 0,
         Callback = function(v) Lighting.GeographicLatitude = v end
-    }})
-    LightingLeft:Slider({{
-        Title = "Exposure Compensation", Default = Defaults.ExposureCompensation, Min = -5, Max = 5,
+    })
+    LightingLeft:AddSlider("WorldExposure", {
+        Text = "Exposure Compensation", Default = Defaults.ExposureCompensation, Min = -5, Max = 5, Rounding = 2,
         Callback = function(v) Lighting.ExposureCompensation = v end
-    }})
-    LightingLeft:Toggle({{
-        Title = "Global Shadows", Default = Defaults.GlobalShadows,
+    })
+    LightingLeft:AddToggle("WorldGlobalShadows", {
+        Text = "Global Shadows", Default = Defaults.GlobalShadows,
         Callback = function(v) Lighting.GlobalShadows = v end
-    }})
+    })
 
     local FogEnabled = false
     local FogStart, FogEnd, FogColor = 0, 1000, Defaults.FogColor
 
-    AtmosphereBox:Toggle({{
-        Title = "Fog", Default = false,
+    AtmosphereBox:AddToggle("WorldFogEnabled", {
+        Text = "Fog", Default = false,
         Callback = function(v)
             FogEnabled = v
             if v then
@@ -6383,100 +6594,100 @@ do
                 Lighting.FogEnd = 1000000
             end
         end
-    }})
-    AtmosphereBox:Label({ Text = "Fog Color" }):ColorPicker({{
+    })
+    AtmosphereBox:AddLabel("Fog Color"):AddColorPicker("WorldFogColor", {
         Default = Defaults.FogColor, Title = "Fog Color",
         Callback = function(v)
             FogColor = v
             if FogEnabled then Lighting.FogColor = v end
         end
-    }})
-    AtmosphereBox:Slider({{
-        Title = "Fog Start", Default = 0, Min = 0, Max = 2000,
+    })
+    AtmosphereBox:AddSlider("WorldFogStart", {
+        Text = "Fog Start", Default = 0, Min = 0, Max = 2000, Rounding = 0,
         Callback = function(v)
             FogStart = v
             if FogEnabled then Lighting.FogStart = v end
         end
-    }})
-    AtmosphereBox:Slider({{
-        Title = "Fog End", Default = 1000, Min = 50, Max = 5000,
+    })
+    AtmosphereBox:AddSlider("WorldFogEnd", {
+        Text = "Fog End", Default = 1000, Min = 50, Max = 5000, Rounding = 0,
         Callback = function(v)
             FogEnd = v
             if FogEnabled then Lighting.FogEnd = v end
         end
-    }})
+    })
 
-    AtmosphereBox:Divider()
+    AtmosphereBox:AddDivider()
 
     local AtmoEnabled = false
-    AtmosphereBox:Toggle({{
-        Title = "Atmosphere", Default = false,
+    AtmosphereBox:AddToggle("WorldAtmosphereEnabled", {
+        Text = "Atmosphere", Default = false,
         Callback = function(v)
             AtmoEnabled = v
             Atmosphere.Density = v and 0.3 or 0
         end
-    }})
-    AtmosphereBox:Slider({{
-        Title = "Density", Default = 0.3, Min = 0, Max = 1,
+    })
+    AtmosphereBox:AddSlider("WorldDensity", {
+        Text = "Density", Default = 0.3, Min = 0, Max = 1, Rounding = 2,
         Callback = function(v) if AtmoEnabled then Atmosphere.Density = v end end
-    }})
-    AtmosphereBox:Slider({{
-        Title = "Offset", Default = 0, Min = -1, Max = 1,
+    })
+    AtmosphereBox:AddSlider("WorldOffset", {
+        Text = "Offset", Default = 0, Min = -1, Max = 1, Rounding = 2,
         Callback = function(v) Atmosphere.Offset = v end
-    }})
-    AtmosphereBox:Label({ Text = "Atmosphere Color" }):ColorPicker({{
+    })
+    AtmosphereBox:AddLabel("Atmosphere Color"):AddColorPicker("WorldAtmoColor", {
         Default = Atmosphere.Color, Title = "Atmosphere Color",
         Callback = function(v) Atmosphere.Color = v end
-    }})
-    AtmosphereBox:Label({ Text = "Decay" }):ColorPicker({{
+    })
+    AtmosphereBox:AddLabel("Decay"):AddColorPicker("WorldDecay", {
         Default = Atmosphere.Decay, Title = "Decay",
         Callback = function(v) Atmosphere.Decay = v end
-    }})
-    AtmosphereBox:Slider({{
-        Title = "Glare", Default = 0, Min = 0, Max = 10,
+    })
+    AtmosphereBox:AddSlider("WorldGlare", {
+        Text = "Glare", Default = 0, Min = 0, Max = 10, Rounding = 2,
         Callback = function(v) Atmosphere.Glare = v end
-    }})
-    AtmosphereBox:Slider({{
-        Title = "Haze", Default = 0, Min = 0, Max = 10,
+    })
+    AtmosphereBox:AddSlider("WorldHaze", {
+        Text = "Haze", Default = 0, Min = 0, Max = 10, Rounding = 2,
         Callback = function(v) Atmosphere.Haze = v end
-    }})
+    })
 
-    EffectsLeft:Toggle({{
-        Title = "Bloom", Default = false,
+    EffectsLeft:AddToggle("WorldBloomEnabled", {
+        Text = "Bloom", Default = false,
         Callback = function(v) Bloom.Enabled = v end
-    }})
-    EffectsLeft:Slider({{
-        Title = "Bloom Intensity", Default = 0.4, Min = 0, Max = 5,
+    })
+    EffectsLeft:AddSlider("WorldBloomIntensity", {
+        Text = "Bloom Intensity", Default = 0.4, Min = 0, Max = 5, Rounding = 2,
         Callback = function(v) Bloom.Intensity = v end
-    }})
-    EffectsLeft:Slider({{
-        Title = "Bloom Size", Default = 24, Min = 0, Max = 56,
+    })
+    EffectsLeft:AddSlider("WorldBloomSize", {
+        Text = "Bloom Size", Default = 24, Min = 0, Max = 56, Rounding = 0,
         Callback = function(v) Bloom.Size = v end
-    }})
-    EffectsLeft:Slider({{
-        Title = "Bloom Threshold", Default = 0.95, Min = 0, Max = 2,
+    })
+    EffectsLeft:AddSlider("WorldBloomThreshold", {
+        Text = "Bloom Threshold", Default = 0.95, Min = 0, Max = 2, Rounding = 2,
         Callback = function(v) Bloom.Threshold = v end
-    }})
+    })
 
-    EffectsLeft:Divider()
+    EffectsLeft:AddDivider()
 
-    EffectsLeft:Toggle({{
-        Title = "Sun Rays", Default = false,
+    EffectsLeft:AddToggle("WorldSunRaysEnabled", {
+        Text = "Sun Rays", Default = false,
         Callback = function(v) SunRays.Enabled = v end
-    }})
-    EffectsLeft:Slider({{
-        Title = "Sun Rays Intensity", Default = 0.1, Min = 0, Max = 1,
+    })
+    EffectsLeft:AddSlider("WorldSunRaysIntensity", {
+        Text = "Sun Rays Intensity", Default = 0.1, Min = 0, Max = 1, Rounding = 2,
         Callback = function(v) SunRays.Intensity = v end
-    }})
-    EffectsLeft:Slider({{
-        Title = "Sun Rays Spread", Default = 0.1, Min = 0, Max = 1,
+    })
+    EffectsLeft:AddSlider("WorldSunRaysSpread", {
+        Text = "Sun Rays Spread", Default = 0.1, Min = 0, Max = 1, Rounding = 2,
         Callback = function(v) SunRays.Spread = v end
-    }})
+    })
 
-    EffectsLeft:Divider()
+    EffectsLeft:AddDivider()
 
-    EffectsLeft:Toggle({{
-        Title = "Depth of Field", Default = false,
+    EffectsLeft:AddToggle("WorldDoFEnabled", {
+        Text = "Depth of Field", Default = false,
         Callback = function(v)
             DepthOfField.Enabled = v
             if not v then
@@ -6484,89 +6695,89 @@ do
                 DepthOfField.NearIntensity = 0
             end
         end
-    }})
-    EffectsLeft:Slider({{
-        Title = "Far Intensity", Default = 0.75, Min = 0, Max = 1,
+    })
+    EffectsLeft:AddSlider("WorldFarIntensity", {
+        Text = "Far Intensity", Default = 0.75, Min = 0, Max = 1, Rounding = 2,
         Callback = function(v) if DepthOfField.Enabled then DepthOfField.FarIntensity = v end end
-    }})
-    EffectsLeft:Slider({{
-        Title = "Focus Distance", Default = 50, Min = 0, Max = 200,
+    })
+    EffectsLeft:AddSlider("WorldFocusDistance", {
+        Text = "Focus Distance", Default = 50, Min = 0, Max = 200, Rounding = 0,
         Callback = function(v) DepthOfField.FocusDistance = v end
-    }})
-    EffectsLeft:Slider({{
-        Title = "In Focus Radius", Default = 30, Min = 0, Max = 50,
+    })
+    EffectsLeft:AddSlider("WorldInFocusRadius", {
+        Text = "In Focus Radius", Default = 30, Min = 0, Max = 50, Rounding = 0,
         Callback = function(v) DepthOfField.InFocusRadius = v end
-    }})
-    EffectsLeft:Slider({{
-        Title = "Near Intensity", Default = 0.75, Min = 0, Max = 1,
+    })
+    EffectsLeft:AddSlider("WorldNearIntensity", {
+        Text = "Near Intensity", Default = 0.75, Min = 0, Max = 1, Rounding = 2,
         Callback = function(v) if DepthOfField.Enabled then DepthOfField.NearIntensity = v end end
-    }})
+    })
 
-    EffectsRight:Toggle({{
-        Title = "Color Correction", Default = false,
+    EffectsRight:AddToggle("WorldCCEnabled", {
+        Text = "Color Correction", Default = false,
         Callback = function(v) ColorCorrection.Enabled = v end
-    }})
-    EffectsRight:Slider({{
-        Title = "Brightness", Default = 0, Min = -1, Max = 1,
+    })
+    EffectsRight:AddSlider("WorldCCBrightness", {
+        Text = "Brightness", Default = 0, Min = -1, Max = 1, Rounding = 2,
         Callback = function(v) ColorCorrection.Brightness = v end
-    }})
-    EffectsRight:Slider({{
-        Title = "Contrast", Default = 0, Min = -1, Max = 1,
+    })
+    EffectsRight:AddSlider("WorldCCContrast", {
+        Text = "Contrast", Default = 0, Min = -1, Max = 1, Rounding = 2,
         Callback = function(v) ColorCorrection.Contrast = v end
-    }})
-    EffectsRight:Slider({{
-        Title = "Saturation", Default = 0, Min = -1, Max = 1,
+    })
+    EffectsRight:AddSlider("WorldCCSaturation", {
+        Text = "Saturation", Default = 0, Min = -1, Max = 1, Rounding = 2,
         Callback = function(v) ColorCorrection.Saturation = v end
-    }})
-    EffectsRight:Label({ Text = "Tint Color" }):ColorPicker({{
+    })
+    EffectsRight:AddLabel("Tint Color"):AddColorPicker("WorldCCTint", {
         Default = Color3.new(1, 1, 1), Title = "Tint Color",
         Callback = function(v) ColorCorrection.TintColor = v end
-    }})
+    })
 
     local CurrentSkybox = "Game's Sky"
     local SkyboxEnabled = false
 
-    SkyboxBox:Toggle({{
-        Title = "Custom Skybox", Default = false,
+    SkyboxBox:AddToggle("WorldSkyboxEnabled", {
+        Text = "Custom Skybox", Default = false,
         Callback = function(v)
             SkyboxEnabled = v
             if v then ApplySkybox(CurrentSkybox) else ApplySkybox("Game's Sky") end
         end
-    }})
+    })
 
     local SkyboxNames = {}
     for name in pairs(Skyboxes) do table.insert(SkyboxNames, name) end
     table.sort(SkyboxNames)
 
-    SkyboxBox:Dropdown({{
-        Values = SkyboxNames, Default = 1, Multi = false, Title = "Skybox Preset",
+    SkyboxBox:AddDropdown("WorldSkyboxPreset", {
+        Values = SkyboxNames, Default = 1, Multi = false, Text = "Skybox Preset",
         Callback = function(Value)
             CurrentSkybox = Value
             if SkyboxEnabled then ApplySkybox(Value) end
         end
-    }})
+    })
 
-    LocalBox:Toggle({{
-        Title = "ForceField Chams", Default = false,
+    LocalBox:AddToggle("LocalForceField", {
+        Text = "ForceField Chams", Default = false,
         Callback = function(v)
             LocalVis.ForceField = v
             ApplyLocalVisuals()
         end
-    }})
-    LocalBox:Slider({{
-        Title = "Transparency", Default = 0, Min = 0, Max = 1,
+    })
+    LocalBox:AddSlider("LocalTransparency", {
+        Text = "Transparency", Default = 0, Min = 0, Max = 1, Rounding = 2,
         Callback = function(v)
             LocalVis.Transparency = v
             if LocalVis.ForceField then ApplyLocalVisuals() end
         end
-    }})
-    LocalBox:Label({ Text = "Chams Color" }):ColorPicker({{
+    })
+    LocalBox:AddLabel("Chams Color"):AddColorPicker("LocalChamsColor", {
         Default = Color3.fromRGB(0, 255, 255), Title = "ForceField Color",
         Callback = function(v)
             LocalVis.Color = v
             if LocalVis.ForceField then ApplyLocalVisuals() end
         end
-    }})
+    })
 
     RegisterCleanup(function()
         RestoreDefaults()
@@ -6575,7 +6786,7 @@ do
 end
 
 do
-    local CrimwalkGroup = Tabs.Misc:Section("Desync")
+    local CrimwalkGroup = Tabs.Misc:AddLeftGroupbox("Desync")
 
     local CW = {
         Enabled = false,
@@ -6636,28 +6847,28 @@ do
         if state then CreateCrimwalk() else ClearCrimwalk() end
     end
 
-    CrimwalkGroup:Toggle({{
-        Title = "Enabled", Default = false,
+    CrimwalkGroup:AddToggle("CrimwalkEnabled", {
+        Text = "Enabled", Default = false,
         Callback = function(Value) SetEnabled(Value) end
-    }})
+    })
 
-    CrimwalkGroup:Label({ Text = "Keybind" }):Keybind({{
-        Default = "X", Mode = "Toggle", Title = "Crimwalk Key",
+    CrimwalkGroup:AddLabel("Keybind"):AddKeyPicker("CrimwalkKeybind", {
+        Default = "X", Mode = "Toggle", Text = "Crimwalk Key", NoUI = false,
         Callback = function(Value)
             SetEnabled(Value)
             if Options.CrimwalkEnabled then
                 Options.CrimwalkEnabled:SetValue(Value)
             end
         end
-    }})
+    })
 
-    CrimwalkGroup:Label({ Text = "Visual Color" }):ColorPicker({{
+    CrimwalkGroup:AddLabel("Visual Color"):AddColorPicker("CrimwalkColor", {
         Default = Color3.fromRGB(113, 13, 255), Title = "Crimwalk Color",
         Callback = function(Value)
             CW.Color = Value
             if CW.Enabled then CreateCrimwalk() end
         end
-    }})
+    })
 
     TrackConnection(LocalPlayer.CharacterAdded:Connect(function()
         task.wait(0.3)
@@ -6673,48 +6884,24 @@ do
     end)
 end
 
-local MenuGroup = Tabs["UI Settings"]:Section("Menu")
+local SettingsTab = Window:Tab({ Name = "Settings" })
+local SettingsSection = SettingsTab:Section("Script")
 
-MenuGroup:Toggle({{
-    Default = Library.KeybindFrame and Library.KeybindFrame.Visible or false,
-    Title = "Open Keybind Menu",
-    Callback = function(value)
-        if Library.KeybindFrame then
-            Library.KeybindFrame.Visible = value
+SettingsSection:Button({
+    Name = "Unload",
+    Callback = function()
+        ScriptAlive = false
+        for _, fn in CleanupCallbacks do
+            pcall(fn)
         end
-    end
-}})
+        for _, d in TrackedDrawings do
+            pcall(function() d:Remove() end)
+        end
+        for _, c in TrackedConnections do
+            pcall(function() c:Disconnect() end)
+        end
+        Library:Unload()
+    end,
+})
 
-MenuGroup:Toggle({{
-    Title = "Custom Cursor",
-    Default = true,
-    Callback = function(Value)
-        Library.ShowCustomCursor = Value
-    end
-}})
-
-MenuGroup:Divider()
-
-MenuGroup:Label({ Text = "Menu bind" }):Keybind({{
-    Default = "RightShift",
-    Title = "Menu keybind"
-}})
-
-MenuGroup:Button({ Title = "Unload", Callback = function() ScriptAlive = false
-    for _, fn in CleanupCallbacks do
-        pcall(fn)
-    end
-    for _, d in TrackedDrawings do
-        pcall(function() d:Remove() end })
-    end
-    for _, c in TrackedConnections do
-        pcall(function() c:Disconnect() end)
-    end
-    Library:Unload()
-end)
-
--- Keybind handled by AIRFLOW
-
-
-
-Window:Notify("Kinder.Club has Loaded!", 4)
+Library:Notify("Kinder.Club has Loaded!", 4)
