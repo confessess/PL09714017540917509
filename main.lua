@@ -6885,9 +6885,9 @@ do
 end
 
 local SettingsTab = Window:Tab({ Name = "Settings" })
-local SettingsSection = SettingsTab:Section("Script")
+SettingsTab:Section("Script")
 
-SettingsSection:Button({
+SettingsTab:Button({
     Name = "Unload",
     Callback = function()
         ScriptAlive = false
